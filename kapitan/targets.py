@@ -96,8 +96,25 @@ def compile_targets(inventory_path, search_paths, ref_controller, args):
     dep_cache_dir = temp_path
 
     rendering_start = time.time()
-    inventory = get_inventory(inventory_path)
-    discovered_targets = inventory.targets.keys()
+
+    # --target-scoped-inventory: only render the explicitly selected targets so we
+    # skip building the (potentially huge) global inventory. It requires an
+    # explicit -t/--targets selection; label-based selection needs the full
+    # inventory to resolve, so we fall back to a full build in that case.
+    target_filter = None
+    if getattr(args, "target_scoped_inventory", False):
+        if args.targets:
+            target_filter = list(args.targets)
+        else:
+            logger.warning(
+                "--target-scoped-inventory requires -t/--targets; "
+                "falling back to a full inventory build."
+            )
+
+    inventory = get_inventory(inventory_path, target_filter=target_filter)
+    # Use the full on-disk target set (not just the rendered subset) so the
+    # selective-output logic below still recognises a partial compile.
+    discovered_targets = inventory.all_discovered_targets
 
     logger.info(
         f"Rendered inventory (%.2fs): discovered {len(discovered_targets)} targets.",

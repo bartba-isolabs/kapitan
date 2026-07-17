@@ -373,10 +373,19 @@ def generate_inventory(args):
         raise
 
 
-def get_inventory(inventory_path, ignore_class_not_found: bool = False) -> Inventory:
+def get_inventory(
+    inventory_path,
+    ignore_class_not_found: bool = False,
+    target_filter: list[str] | None = None,
+) -> Inventory:
     """
     generic inventory function that makes inventory backend pluggable
     default backend is reclass
+
+    When ``target_filter`` is provided (the ``--target-scoped-inventory`` fast path),
+    only those targets are rendered; the rest are discovered but left
+    unrendered. This yields a partial inventory, so callers relying on the
+    global inventory may break.
     """
 
     # if inventory is already cached there is nothing to do
@@ -420,6 +429,7 @@ def get_inventory(inventory_path, ignore_class_not_found: bool = False) -> Inven
             compose_target_name=compose_target_name,
             ignore_class_not_found=ignore_class_not_found,
             enable_class_wildcards=enable_class_wildcards,
+            target_filter=target_filter,
         )
     except InventoryError:
         sys.exit(1)

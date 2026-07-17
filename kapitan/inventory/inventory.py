@@ -38,7 +38,15 @@ class Inventory(ABC):
         initialise=True,
         target_class=InventoryTarget,
         enable_class_wildcards: bool = False,
+        target_filter: list[str] | None = None,
     ):
+        # When ``target_filter`` is set, only the listed targets are rendered
+        # (the rest are still *discovered* on disk so counts stay correct, but
+        # their expensive class hierarchy is never resolved). This is the
+        # ``--target-scoped-inventory`` fast path: it trades a correct global inventory
+        # for a much cheaper build when iterating on a handful of targets.
+        # NOTE: only backends whose ``render_targets`` honours the passed-in
+        # ``targets`` dict (e.g. omegaconf) actually skip work here.
         # Pre-expand wildcard class entries (kapicorp/kapitan#1084) into a
         # temporary mirror of the inventory tree so all backends see only
         # concrete class names.  Expansion is opt-in (enable_class_wildcards
@@ -62,6 +70,11 @@ class Inventory(ABC):
         self.targets: dict[str, target_class] = {}
         self.ignore_class_not_found = ignore_class_not_found
         self.target_class = target_class
+        self.target_filter = target_filter
+        # Names of every target discovered on disk, independent of any filter.
+        # Callers (e.g. compile_targets) use this to reason about the full
+        # target set even when only a subset was rendered.
+        self.all_discovered_targets: set[str] = set()
 
         if initialise:
             self.__initialise(ignore_class_not_found=ignore_class_not_found)
@@ -183,6 +196,38 @@ class Inventory(ABC):
                         )
 
                     self.targets[target.name] = target
+
+            # Record the full discovered set before any filtering so callers
+            # can still tell how many targets exist on disk.
+            self.all_discovered_targets = set(self.targets.keys())
+
+            # --target-scoped-inventory: restrict rendering to the requested subset.
+            if self.target_filter is not None:
+                requested = set(self.target_filter)
+                missing = requested - self.all_discovered_targets
+                if missing:
+                    logger.warning(
+                        "target-scoped inventory: ignoring unknown target(s): %s",
+                        ", ".join(sorted(missing)),
+                    )
+                selected = requested & self.all_discovered_targets
+                if not selected:
+                    # get_inventory() turns InventoryError into a bare
+                    # sys.exit(1), so log the reason first or it's lost.
+                    msg = (
+                        "target-scoped inventory: none of the requested targets "
+                        f"{sorted(requested)} were found in the inventory"
+                    )
+                    logger.error(msg)
+                    raise InventoryError(msg)
+                self.targets = {
+                    name: self.targets[name] for name in self.targets if name in selected
+                }
+                logger.info(
+                    "target-scoped inventory: rendering %d/%d discovered targets",
+                    len(self.targets),
+                    len(self.all_discovered_targets),
+                )
 
             self.render_targets(
                 self.targets, ignore_class_not_found=ignore_class_not_found

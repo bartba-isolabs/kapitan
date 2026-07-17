@@ -363,6 +363,22 @@ def build_parser():
         ),
     )
 
+    compile_parser.add_argument(
+        "--target-scoped-inventory",
+        "--tsi",
+        default=from_dot_kapitan("compile", "target-scoped-inventory", False),
+        action="store_true",
+        help=(
+            "only build/render the inventory for the targets selected with "
+            "-t/--targets, instead of the whole inventory tree. Speeds up "
+            "iteration when compiling a small subset of targets. NOTE: this "
+            "produces a partial inventory, so generators that rely on the "
+            "global inventory (cross-target references) may break. Requires "
+            "-t/--targets; ignored otherwise. Best supported by the omegaconf "
+            "backend."
+        ),
+    )
+
     compile_selector_parser = compile_parser.add_mutually_exclusive_group()
     compile_selector_parser.add_argument(
         "--targets",
